@@ -1,0 +1,556 @@
+#!/usr/bin/env python3
+"""
+AI Environment Manager
+A comprehensive tool to test, save, and restore your AI development environment.
+"""
+
+import os
+import sys
+import time
+import platform
+import subprocess
+import json
+from datetime import datetime
+
+# Global variables
+SAVE_DIR = f"ai_env_save_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+
+def print_header(message):
+    """Print a formatted header"""
+    header = "\n" + "=" * 60 + "\n" + message + "\n" + "=" * 60
+    print(header)
+    return header
+
+def run_command(command):
+    """Run a shell command and return the output"""
+    try:
+        result = subprocess.run(command, shell=True, check=True, 
+                               stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                               universal_newlines=True)
+        return result.stdout.strip()
+    except subprocess.CalledProcessError as e:
+        return f"Error: {e.stderr.strip()}"
+
+def get_system_info():
+    """Gather system information"""
+    print_header("SYSTEM INFORMATION")
+    
+    system_info = {
+        "timestamp": datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+        "os": platform.platform(),
+        "processor": platform.processor(),
+        "python_version": platform.python_version(),
+        "python_path": sys.executable
+    }
+    
+    print(f"Date and Time: {system_info['timestamp']}")
+    print(f"Operating System: {system_info['os']}")
+    print(f"Processor: {system_info['processor']}")
+    print(f"Python Version: {system_info['python_version']}")
+    print(f"Python Path: {system_info['python_path']}")
+    
+    # Check available memory
+    try:
+        import psutil
+        vm = psutil.virtual_memory()
+        system_info["ram_total"] = f"{vm.total / (1024**3):.2f} GB"
+        system_info["ram_available"] = f"{vm.available / (1024**3):.2f} GB"
+        system_info["cpu_cores"] = os.cpu_count()
+        
+        print(f"RAM: {system_info['ram_total']} total, {system_info['ram_available']} available")
+        print(f"CPU Cores: {system_info['cpu_cores']}")
+    except ImportError:
+        print("psutil not installed - skipping detailed memory info")
+        print("To install: pip install psutil")
+    
+    # Check if running in virtual environment
+    in_venv = sys.prefix != sys.base_prefix
+    system_info["virtual_env"] = in_venv
+    system_info["venv_path"] = sys.prefix if in_venv else None
+    
+    print(f"Running in virtual environment: {in_venv}")
+    if in_venv:
+        print(f"Virtual environment path: {system_info['venv_path']}")
+        
+    return system_info
+
+def check_libraries():
+    """Check which AI libraries are installed"""
+    header = print_header("LIBRARY AVAILABILITY CHECK")
+    
+    libraries = [
+        "numpy", "pandas", "matplotlib", "sklearn", "scipy",
+        "tensorflow", "torch", "keras", "transformers", 
+        "nltk", "spacy", "gensim", "cv2", "PIL",
+        "xgboost", "lightgbm", "catboost", "optuna", 
+        "coremltools"
+    ]
+    
+    library_info = {}
+    
+    for lib in libraries:
+        try:
+            if lib == "cv2":
+                module = __import__("cv2")
+                version = module.__version__
+                print(f"✓ OpenCV {version}")
+                library_info["opencv"] = version
+            elif lib == "PIL":
+                import PIL
+                version = PIL.__version__
+                print(f"✓ Pillow {version}")
+                library_info["pillow"] = version
+            elif lib == "sklearn":
+                import sklearn
+                version = sklearn.__version__
+                print(f"✓ scikit-learn {version}")
+                library_info["scikit-learn"] = version
+            else:
+                module = __import__(lib)
+                version = module.__version__ if hasattr(module, '__version__') else 'unknown'
+                print(f"✓ {lib} {version}")
+                library_info[lib] = version
+        except ImportError:
+            print(f"✗ {lib} not installed")
+            library_info[lib] = None
+        except Exception as e:
+            print(f"? {lib} error: {str(e)}")
+            library_info[lib] = "error"
+    
+    # Get pip list
+    print("\nFull list of installed packages:")
+    pip_list = run_command(f"{sys.executable} -m pip list")
+    print(pip_list)
+    library_info["pip_list"] = pip_list
+    
+    return header, library_info
+
+def run_performance_tests():
+    """Run basic performance tests"""
+    header = print_header("PERFORMANCE TESTS")
+    
+    results = {}
+    
+    # Test NumPy if available
+    try:
+        import numpy as np
+        
+        print("Testing NumPy performance...")
+        size = (1000, 1000)
+        a = np.random.rand(*size)
+        b = np.random.rand(*size)
+        
+        # Warm up
+        _ = np.dot(a, b)
+        
+        # Timed test
+        start = time.time()
+        _ = np.dot(a, b)
+        end = time.time()
+        
+        numpy_time = end - start
+        print(f"NumPy matrix multiplication time: {numpy_time:.4f} seconds")
+        results["numpy"] = {"matrix_mult_time": numpy_time}
+        
+    except ImportError:
+        print("NumPy not installed - skipping test")
+        results["numpy"] = None
+    
+    # Test TensorFlow if available
+    try:
+        import tensorflow as tf
+        
+        print("\nTesting TensorFlow performance...")
+        print(f"TensorFlow version: {tf.__version__}")
+        
+        # Check available devices
+        devices = tf.config.list_physical_devices()
+        device_names = [device.name for device in devices]
+        print(f"Available devices: {device_names}")
+        
+        # Simple computation test
+        a = tf.random.normal([1000, 1000])
+        b = tf.random.normal([1000, 1000])
+        
+        # Warm up
+        _ = tf.matmul(a, b)
+        
+        # Timed test
+        start = time.time()
+        _ = tf.matmul(a, b)
+        end = time.time()
+        
+        tf_time = end - start
+        print(f"TensorFlow matrix multiplication time: {tf_time:.4f} seconds")
+        
+        results["tensorflow"] = {
+            "version": tf.__version__,
+            "devices": device_names,
+            "matrix_mult_time": tf_time
+        }
+        
+    except ImportError:
+        print("TensorFlow not installed - skipping test")
+        results["tensorflow"] = None
+    except Exception as e:
+        print(f"Error during TensorFlow test: {str(e)}")
+        results["tensorflow"] = {"error": str(e)}
+    
+    # Test PyTorch if available
+    try:
+        import torch
+        
+        print("\nTesting PyTorch performance...")
+        print(f"PyTorch version: {torch.__version__}")
+        
+        # Check device availability
+        cuda_available = torch.cuda.is_available()
+        mps_available = hasattr(torch.backends, "mps") and torch.backends.mps.is_available()
+        
+        device = "mps" if mps_available else "cuda" if cuda_available else "cpu"
+        print(f"Using device: {device}")
+        
+        # Simple computation test
+        a = torch.rand(1000, 1000, device=device)
+        b = torch.rand(1000, 1000, device=device)
+        
+        # Warm up
+        _ = torch.matmul(a, b)
+        
+        # Timed test
+        start = time.time()
+        _ = torch.matmul(a, b)
+        end = time.time()
+        
+        torch_time = end - start
+        print(f"PyTorch matrix multiplication time: {torch_time:.4f} seconds")
+        
+        results["pytorch"] = {
+            "version": torch.__version__,
+            "cuda_available": cuda_available,
+            "mps_available": mps_available,
+            "device_used": device,
+            "matrix_mult_time": torch_time
+        }
+        
+    except ImportError:
+        print("PyTorch not installed - skipping test")
+        results["pytorch"] = None
+    except Exception as e:
+        print(f"Error during PyTorch test: {str(e)}")
+        results["pytorch"] = {"error": str(e)}
+    
+    return header, results
+
+def create_setup_files():
+    """Create setup files for environment recreation"""
+    # Create requirements.txt
+    print("Creating requirements.txt file...")
+    req_file = os.path.join(SAVE_DIR, "requirements.txt")
+    run_command(f"{sys.executable} -m pip freeze > {req_file}")
+    
+    # Create setup script
+    setup_script = os.path.join(SAVE_DIR, "setup_environment.py")
+    with open(setup_script, "w") as f:
+        f.write("""#!/usr/bin/env python3
+\"\"\"
+AI Environment Setup Script
+This script recreates the saved AI environment.
+\"\"\"
+
+import os
+import sys
+import subprocess
+import platform
+
+def run_command(command):
+    \"\"\"Run a shell command and print output\"\"\"
+    print(f"Running: {command}")
+    subprocess.run(command, shell=True, check=True)
+
+def main():
+    print("=" * 60)
+    print("Setting up AI Environment")
+    print("=" * 60)
+    
+    # Check if virtual environment should be created
+    create_venv = input("Create virtual environment? (y/n): ").lower() == 'y'
+    
+    if create_venv:
+        venv_name = input("Enter environment name (default: ai_env): ") or "ai_env"
+        print(f"Creating virtual environment: {venv_name}")
+        run_command(f"{sys.executable} -m venv {venv_name}")
+        
+        # Determine activation script
+        if platform.system() == "Windows":
+            activate_cmd = f"{venv_name}\\Scripts\\activate"
+        else:
+            activate_cmd = f"source {venv_name}/bin/activate"
+            
+        print(f"\\nTo activate the environment, run:\\n{activate_cmd}")
+        print("\\nAfter activation, run: python setup_environment.py --install")
+    
+    # Install packages if --install flag is provided
+    if "--install" in sys.argv:
+        print("\\nInstalling packages from requirements.txt...")
+        run_command(f"{sys.executable} -m pip install -r requirements.txt")
+        print("\\nEnvironment setup complete!")
+    
+if __name__ == "__main__":
+    main()
+""")
+    
+    # Create test script
+    test_script = os.path.join(SAVE_DIR, "test_environment.py")
+    with open(test_script, "w") as f:
+        f.write("""#!/usr/bin/env python3
+\"\"\"
+AI Environment Test Script
+This script tests if the AI environment is properly set up.
+\"\"\"
+
+import sys
+import time
+import platform
+from datetime import datetime
+
+def print_header(message):
+    \"\"\"Print a formatted header\"\"\"
+    print("\\n" + "=" * 60)
+    print(message)
+    print("=" * 60)
+
+def main():
+    print_header("AI ENVIRONMENT TEST")
+    
+    print(f"Date and Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    print(f"Python Version: {platform.python_version()}")
+    print(f"Python Path: {sys.executable}")
+    
+    # Test NumPy
+    try:
+        import numpy as np
+        print(f"\\nNumPy {np.__version__} is installed")
+        
+        # Simple performance test
+        size = (1000, 1000)
+        a = np.random.rand(*size)
+        b = np.random.rand(*size)
+        
+        start = time.time()
+        _ = np.dot(a, b)
+        end = time.time()
+        
+        print(f"NumPy matrix multiplication time: {end - start:.4f} seconds")
+    except ImportError:
+        print("\\nNumPy is not installed")
+    
+    # Test TensorFlow
+    try:
+        import tensorflow as tf
+        print(f"\\nTensorFlow {tf.__version__} is installed")
+        print(f"Devices: {[device.name for device in tf.config.list_physical_devices()]}")
+    except ImportError:
+        print("\\nTensorFlow is not installed")
+    
+    # Test PyTorch
+    try:
+        import torch
+        print(f"\\nPyTorch {torch.__version__} is installed")
+        print(f"CUDA available: {torch.cuda.is_available()}")
+        mps_available = hasattr(torch.backends, "mps") and torch.backends.mps.is_available()
+        print(f"MPS available: {mps_available}")
+    except ImportError:
+        print("\\nPyTorch is not installed")
+    
+    print_header("TEST COMPLETE")
+
+if __name__ == "__main__":
+    main()
+""")
+    
+    return req_file, setup_script, test_script
+
+def save_environment():
+    """Save the current Python environment"""
+    print_header("SAVING ENVIRONMENT")
+    
+    # Create directory for saving environment info
+    os.makedirs(SAVE_DIR, exist_ok=True)
+    
+    # Create setup files
+    req_file, setup_script, test_script = create_setup_files()
+    
+    # Save conda environment if conda is available
+    try:
+        conda_info = run_command("conda info --json")
+        if "not found" not in conda_info.lower():
+            env_file = os.path.join(SAVE_DIR, "conda_environment.yml")
+            print(f"Saving conda environment to {env_file}...")
+            run_command(f"conda env export > {env_file}")
+    except:
+        print("Conda not available or not in use")
+    
+    print(f"\nEnvironment saved to directory: {SAVE_DIR}")
+    print(f"To recreate this environment later:")
+    print(f"1. Navigate to the {SAVE_DIR} directory")
+    print(f"2. Run: python setup_environment.py")
+    print(f"3. Follow the prompts to create and set up the environment")
+    
+    return SAVE_DIR
+
+def save_test_results(system_info, library_info, performance_results):
+    """Save all test results to a JSON file"""
+    results = {
+        "system_info": system_info,
+        "libraries": library_info,
+        "performance": performance_results,
+        "timestamp": datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    }
+    
+    results_file = os.path.join(SAVE_DIR, "test_results.json")
+    
+    with open(results_file, 'w') as f:
+        json.dump(results, f, indent=2)
+    
+    # Also save a human-readable report
+    report_file = os.path.join(SAVE_DIR, "test_report.txt")
+    
+    with open(report_file, 'w') as f:
+        f.write("=" * 60 + "\n")
+        f.write("AI ENVIRONMENT TEST REPORT\n")
+        f.write("=" * 60 + "\n\n")
+        
+        f.write("SYSTEM INFORMATION\n")
+        f.write("-" * 60 + "\n")
+        for key, value in system_info.items():
+            f.write(f"{key}: {value}\n")
+        
+        f.write("\n\nINSTALLED LIBRARIES\n")
+        f.write("-" * 60 + "\n")
+        for lib, version in library_info.items():
+            if lib != "pip_list":
+                status = "✓ Installed" if version else "✗ Not installed"
+                f.write(f"{lib}: {version if version else ''} {status}\n")
+        
+        f.write("\n\nPERFORMANCE RESULTS\n")
+        f.write("-" * 60 + "\n")
+        if "numpy" in performance_results and performance_results["numpy"]:
+            f.write(f"NumPy matrix multiplication: {performance_results['numpy'].get('matrix_mult_time', 'N/A'):.4f} seconds\n")
+        
+        if "tensorflow" in performance_results and performance_results["tensorflow"]:
+            tf_info = performance_results["tensorflow"]
+            if isinstance(tf_info, dict) and "error" not in tf_info:
+                f.write(f"TensorFlow version: {tf_info.get('version', 'N/A')}\n")
+                f.write(f"TensorFlow devices: {', '.join(tf_info.get('devices', []))}\n")
+                f.write(f"TensorFlow matrix multiplication: {tf_info.get('matrix_mult_time', 'N/A'):.4f} seconds\n")
+        
+        if "pytorch" in performance_results and performance_results["pytorch"]:
+            torch_info = performance_results["pytorch"]
+            if isinstance(torch_info, dict) and "error" not in torch_info:
+                f.write(f"PyTorch version: {torch_info.get('version', 'N/A')}\n")
+                f.write(f"PyTorch device used: {torch_info.get('device_used', 'N/A')}\n")
+                f.write(f"CUDA available: {torch_info.get('cuda_available', 'N/A')}\n")
+                f.write(f"MPS available: {torch_info.get('mps_available', 'N/A')}\n")
+                f.write(f"PyTorch matrix multiplication: {torch_info.get('matrix_mult_time', 'N/A'):.4f} seconds\n")
+    
+    print(f"\nTest results saved to {results_file}")
+    print(f"Human-readable report saved to {report_file}")
+    
+    return results_file, report_file
+
+def create_readme():
+    """Create a README file with instructions"""
+    readme_file = os.path.join(SAVE_DIR, "README.md")
+    
+    with open(readme_file, "w") as f:
+        f.write("""# AI Environment Backup
+
+This directory contains a backup of an AI development environment created on {date}.
+
+## Contents
+
+- `requirements.txt`: List of all Python packages and their versions
+- `test_results.json`: Detailed test results in JSON format
+- `test_report.txt`: Human-readable report of the environment tests
+- `setup_environment.py`: Script to recreate this environment
+- `test_environment.py`: Script to test if the environment is working correctly
+
+## How to Use
+
+To restore your environment on another machine or after system changes:
+
+1. Copy this directory (`{save_dir}`) to the target machine
+2. Navigate to this directory
+3. Run: `python setup_environment.py`
+4. Follow the prompts to create a new virtual environment
+5. Activate the new environment and run: `python setup_environment.py --install`
+6. To verify the installation, run: `python test_environment.py`
+
+## Benefits
+
+This approach ensures you can:
+- Keep track of your AI development environment
+- Recreate the exact same setup on other machines
+- Document your progress and environment configuration
+- Easily share your environment with collaborators
+
+The backup works on both macOS and Windows, and handles both pip and conda environments.
+
+## System Information
+
+The environment was created on a system with:
+- OS: {os}
+- Python: {python_version}
+- Processor: {processor}
+
+For full details, see the `test_report.txt` file.
+""".format(
+            date=datetime.now().strftime('%Y-%m-%d'),
+            save_dir=SAVE_DIR,
+            os=platform.platform(),
+            python_version=platform.python_version(),
+            processor=platform.processor()
+        ))
+    
+    return readme_file
+
+def main():
+    """Main function to run tests and save progress"""
+    print_header("AI ENVIRONMENT MANAGER")
+    print("This script will test, save, and help you restore your AI environment.")
+    
+    # Create save directory
+    os.makedirs(SAVE_DIR, exist_ok=True)
+    
+    # Run tests
+    system_info = get_system_info()
+    _, library_info = check_libraries()
+    _, performance_results = run_performance_tests()
+    
+    # Save environment
+    save_environment()
+    
+    # Save test results
+    save_test_results(system_info, library_info, performance_results)
+    
+    # Create README
+    readme_file = create_readme()
+    print(f"Created README at: {readme_file}")
+    
+    print_header("TESTING AND SAVING COMPLETE")
+    print(f"All results have been saved to the directory: {SAVE_DIR}")
+    print("\nTo restore this environment in the future:")
+    print(f"1. Navigate to {SAVE_DIR}")
+    print("2. Run: python setup_environment.py")
+    print("3. Follow the prompts to create and configure your environment")
+    
+    print("\nTo continue developing with your current environment:")
+    print("1. Make sure to regularly update your requirements.txt:")
+    print(f"   {sys.executable} -m pip freeze > requirements.txt")
+    print("2. Consider using version control (like git) for your code")
+    print("3. For collaborative projects, share the saved environment files")
+
+if __name__ == "__main__":
+    main()
+    
